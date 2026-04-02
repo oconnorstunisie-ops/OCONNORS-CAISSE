@@ -2452,7 +2452,7 @@ function printRapportX(){
   }).join('');
 
   const supprEnCours=suppressions.filter(s=>lastCloture?new Date(s.date).getTime()>=new Date(lastCloture).getTime():true);
-  const totalSuppr=supprEnCours.reduce((s,x)=>s+x.montant,0);
+  const totalSuppr=supprEnCours.reduce((s,x)=>s+(x.montant||0),0);
 
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
@@ -2532,25 +2532,36 @@ function printStats(){
       <td style="text-align:right;font-size:14px;font-weight:700;padding:3px 0">${fmtDT(d.ca)}</td>
     </tr>`).join('');
 
-  // Suppressions depuis la dernière clôture
+  // Suppressions depuis la dernière clôture — fraîches depuis Supabase si possible
   const supprDuJour = lastCloture
     ? suppressions.filter(s => new Date(s.date).getTime() >= new Date(lastCloture).getTime())
-    : suppressions;
+    : [...suppressions];
+
   const supprBloc = supprDuJour.length ? `
 <div class="suppr-bloc">
 <div class="suppr-titre">⚠️ COMMANDES SUPPRIMÉES (${supprDuJour.length})</div>
 ${supprDuJour.map(s=>{
   const d=new Date(s.date);
+  const items=Array.isArray(s.items)?s.items:[];
+  const articlesStr=items.length
+    ? items.map(i=>(i.qty||1)+'× '+(i.name||'?')+' ('+fmtDT((i.price||0)*(i.qty||1))+')').join('\n')
+    : '—';
   return `<div class="suppr-row">
     <div class="suppr-head">
-      <span>${s.table}${s.salon?' — '+s.salon:''}</span>
-      <span style="color:#dc2626">${fmtDT(s.montant)}</span>
+      <span>${s.table||'?'}${s.salon?' — '+s.salon:''}</span>
+      <span style="color:#dc2626">${fmtDT(s.montant||0)}</span>
     </div>
-    <div class="suppr-detail">🕐 ${d.toLocaleTimeString('fr-FR')} &nbsp;👤 ${s.serveur} &nbsp;📦 ${s.totalQty} art.</div>
-    <div class="suppr-arts">${s.items.map(i=>i.qty+'× '+i.name).join(' · ')}</div>
+    <div class="suppr-detail">🕐 ${d.toLocaleTimeString('fr-FR')} &nbsp;👤 ${s.serveur||'?'} &nbsp;📦 ${s.totalQty||items.length} art.</div>
+    <table style="width:100%;margin-top:3px">
+      ${items.map(i=>`<tr>
+        <td style="font-size:11px;padding:1px 0">${i.qty||1}×</td>
+        <td style="font-size:11px;padding:1px 2px;width:100%">${i.name||'?'}</td>
+        <td style="font-size:11px;padding:1px 0;text-align:right;color:#dc2626">${fmtDT((i.price||0)*(i.qty||1))}</td>
+      </tr>`).join('')}
+    </table>
   </div>`;
 }).join('')}
-<div class="suppr-total"><span>TOTAL SUPPRIMÉ</span><span>${fmtDT(supprDuJour.reduce((s,x)=>s+x.montant,0))}</span></div>
+<div class="suppr-total"><span>TOTAL SUPPRIMÉ</span><span>${fmtDT(supprDuJour.reduce((s,x)=>s+(x.montant||0),0))}</span></div>
 </div>` : '';
 
   // Marquer suppressions comme vues — uniquement si admin et clôture
