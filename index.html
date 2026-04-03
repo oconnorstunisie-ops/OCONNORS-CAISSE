@@ -23,6 +23,57 @@
   --text:     #0f172a;
   --muted:    #64748b;
 }
+
+/* ── MODE SOMBRE ── */
+body.dark {
+  --bg:       #0f172a;
+  --surface:  #1e293b;
+  --border:   #334155;
+  --text:     #f1f5f9;
+  --muted:    #94a3b8;
+  --accent:   #3b82f6;
+  --green:    #10b981;
+  --yellow:   #f59e0b;
+}
+body.dark .topbar{background:#1e293b;border-bottom-color:#3b82f6;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+body.dark .nav-btn:hover:not(.active){background:#334155}
+body.dark .login-box{background:#1e293b;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+body.dark .login-nom,.dark .pin-dots{background:#0f172a;border-color:#334155;color:#f1f5f9}
+body.dark .pin-btn{background:#1e293b;border-color:#334155;color:#f1f5f9}
+body.dark .modal{background:#1e293b}
+body.dark .form-group input,.dark .form-group select,.dark .form-group textarea{background:#0f172a;border-color:#334155;color:#f1f5f9}
+body.dark .prod-card{background:#1e293b;border-color:#334155}
+body.dark .prod-card:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(59,130,246,.2)}
+body.dark .order-panel{background:#1e293b;border-left-color:#334155}
+body.dark .order-top{background:#0f172a}
+body.dark .order-item{background:#0f172a;border-color:#334155}
+body.dark .order-item.selected{background:#1e3a5f;border-color:var(--accent)}
+body.dark .order-totals{background:#334155;border-top-color:#475569}
+body.dark .numpad-wrap{background:#334155;border-top-color:#475569}
+body.dark .npd-btn{background:#1e293b;border-color:#475569;color:#f1f5f9}
+body.dark .npd-del{background:#450a0a;color:#fca5a5;border-color:#7f1d1d}
+body.dark .npd-raz{background:#431407;color:#fed7aa;border-color:#7c2d12}
+body.dark .npd-ok{background:var(--accent);color:#fff}
+body.dark .table-card{background:#1e293b;border-color:#334155}
+body.dark .table-card.occupee{background:#1c1917;border-color:#f59e0b}
+body.dark .stat-card{background:#1e293b;border-color:#334155}
+body.dark .vente-card{background:#1e293b;border-color:#334155}
+body.dark .hist-search,.dark .hist-select{background:#1e293b;border-color:#334155;color:#f1f5f9}
+body.dark .fam-chip,.dark .sfam-chip,.dark .salon-chip{background:#1e293b;border-color:#334155;color:#94a3b8}
+body.dark .famille-bar,.dark .subfam-bar,.dark .salon-bar,.dark .rubrique-bar,.dark .cat-header{background:#1e293b;border-bottom-color:#334155}
+body.dark .btn-back{background:#1e293b;border-color:#334155;color:#94a3b8}
+body.dark .overlay{background:rgba(0,0,0,.7)}
+body.dark .search-bar{background:#0f172a;border-color:#334155;color:#f1f5f9}
+body.dark .action-bar{background:#020617;border-top-color:#1e293b}
+body.dark #login-screen{background:#0f172a}
+body.dark .role-tab{background:#1e293b;color:#94a3b8}
+body.dark .pay-display{background:#0f172a;border-color:#334155;color:#f1f5f9}
+body.dark .btn-cancel{background:#1e293b;border-color:#334155;color:#94a3b8}
+
+/* Bouton toggle dark mode */
+.btn-dark{padding:5px 9px;border:1px solid var(--border);border-radius:7px;
+  background:transparent;color:var(--muted);font-size:1rem;cursor:pointer;line-height:1;transition:.2s}
+.btn-dark:hover{background:var(--border)}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text)}
 button{touch-action:manipulation;font-family:'Cairo',sans-serif}
@@ -429,6 +480,7 @@ button{touch-action:manipulation;font-family:'Cairo',sans-serif}
     <button class="nav-btn admin-only" onclick="goPage('params',this)">⚙️ Paramètres</button>
   </div>
   <div class="topbar-right">
+    <button class="btn-dark" id="btn-dark" onclick="toggleDark()" title="Mode sombre">🌙</button>
     <button class="btn-cloture" onclick="cloturerJournee()">🔒 Clôture</button>
     <span id="clock">--:--</span>
     <span class="role-badge" id="role-badge">—</span>
@@ -3293,6 +3345,27 @@ ${sF.length?`<div class="warn">⚠️ ${sF.length} SUPPRESSION(S) — ${fmtDT(to
 }
 
 // ══════════════════════════════════════════════════════════
+//  MODE SOMBRE
+// ══════════════════════════════════════════════════════════
+function toggleDark(){
+  const isDark = document.body.classList.toggle('dark');
+  document.getElementById('btn-dark').textContent = isDark ? '☀️' : '🌙';
+  localStorage.setItem('oc-dark', isDark ? '1' : '0');
+}
+// Appliquer au démarrage selon préférence sauvegardée
+(function(){
+  const saved = localStorage.getItem('oc-dark');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if(saved === '1' || (saved === null && prefersDark)){
+    document.body.classList.add('dark');
+    document.addEventListener('DOMContentLoaded', ()=>{
+      const btn = document.getElementById('btn-dark');
+      if(btn) btn.textContent = '☀️';
+    });
+  }
+})();
+
+// ══════════════════════════════════════════════════════════
 //  KEYBOARD
 // ══════════════════════════════════════════════════════════
 document.addEventListener('keydown',e=>{
@@ -3317,8 +3390,10 @@ chargerDepuisSupabase().then(()=>{
   favs        = ld(K.FAVS,      []);
   salons      = ld(K.SALONS,    SALONS_DEFAUT());
   suppressions= ld(K.SUPPRESSIONS, []);
-  // CLOTURES_LOG chargé directement via ld() à la demande dans renderParams
   afficherAlerteSuppression();
+  // ✅ Rafraîchir l'affichage avec les vraies données Supabase
+  renderTables();
+  renderHist();
 }).catch(()=>{
   syncStatus('err','⚠️ Hors ligne — données locales utilisées');
 });
