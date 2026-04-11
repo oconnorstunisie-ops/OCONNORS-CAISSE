@@ -1127,22 +1127,41 @@ async function chargerDepuisSupabase(){
     const val=await sbGet(cle);
     if(val!==null) svLocal(cle,val);
   }
-  // Charger ventes récentes (60 derniers jours) dans le cache local
+
+  // Charger ventes des 60 derniers jours — sans filtre 09h (chargement brut)
   syncStatus('sync','🔄 Chargement ventes récentes…');
-  const debut60=new Date(); debut60.setDate(debut60.getDate()-60);
-  const pad=n=>String(n).padStart(2,'0');
-  const fmt=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
-  const ventesRecentes=await sbChargerVentes(fmt(debut60),null);
-  if(ventesRecentes){
-    ventes=ventesRecentes;
-    svLocal(K.VENTES,ventes);
-  }
+  const debut60=new Date(); debut60.setDate(debut60.getDate()-60); debut60.setHours(0,0,0,0);
+  try{
+    const r=await fetch(
+      `${SB_URL}/rest/v1/ventes?order=date.desc&limit=2000&date=gte.${debut60.toISOString()}`,
+      {headers:SB_H}
+    );
+    if(r.ok){
+      const data=await r.json();
+      ventes=data.map(sbToVente);
+      svLocal(K.VENTES,ventes);
+    }
+  }catch(e){ console.warn('Erreur chargement ventes',e); }
+
   // Charger suppressions récentes
-  const supprRecentes=await sbChargerSuppressions(fmt(debut60),null);
-  if(supprRecentes){ suppressions=supprRecentes; svLocal(K.SUPPRESSIONS,suppressions); }
+  try{
+    const r=await fetch(
+      `${SB_URL}/rest/v1/suppressions?order=date.desc&limit=500&date=gte.${debut60.toISOString()}`,
+      {headers:SB_H}
+    );
+    if(r.ok){
+      const data=await r.json();
+      suppressions=data.map(row=>({
+        date:row.date, serveur:row.serveur, table:row.table_nom,
+        salon:row.salon, montant:parseFloat(row.montant)||0,
+        totalQty:row.total_qty, items:row.items||[], type:row.type||'table'
+      }));
+      svLocal(K.SUPPRESSIONS,suppressions);
+    }
+  }catch(e){ console.warn('Erreur chargement suppressions',e); }
 
   sbOnline=true;
-  syncStatus('ok','☁️ Supabase connecté — '+( ventesRecentes?ventesRecentes.length:0)+' vente(s) chargée(s)');
+  syncStatus('ok','☁️ Supabase connecté — '+ventes.length+' vente(s) chargée(s)');
 }
 
 // ── Sync périodique config toutes les 5 min ──
@@ -3106,11 +3125,30 @@ function openRapportPeriode(){
 
 function rpGenerer(){
   const el = document.getElementById('rapport-periode-content');
-  const vF = rpFiltrerVentes();
-  const sF = rpFiltrerSuppressions();
   const debutVal = document.getElementById('rp-debut').value;
   const finVal   = document.getElementById('rp-fin').value;
 
+  // Si Supabase dispo → interroger directement (accès illimité dans le temps)
+  if(sbOnline){
+    el.innerHTML='<div style="text-align:center;padding:40px;color:var(--muted)">🔄 Chargement depuis Supabase…</div>';
+    Promise.all([
+      sbChargerVentes(debutVal||null, finVal||null),
+      sbChargerSuppressions(debutVal||null, finVal||null)
+    ]).then(([ventesDistantes, supprDistantes])=>{
+      const vF = ventesDistantes || rpFiltrerVentes();
+      const sF = supprDistantes  || rpFiltrerSuppressions();
+      _rpData = null;
+      rpAfficher(el, vF, sF, debutVal, finVal);
+    });
+    return;
+  }
+  // Fallback local
+  const vF = rpFiltrerVentes();
+  const sF = rpFiltrerSuppressions();
+  rpAfficher(el, vF, sF, debutVal, finVal);
+}
+
+function rpAfficher(el, vF, sF, debutVal, finVal){
   const ventesValides   = vF.filter(v=>!v.annule);
   const ventesAnnulees  = vF.filter(v=>v.annule);
 
@@ -3257,7 +3295,27 @@ function rpGenerer(){
 }
 
 function rpExportCSV(){
-  if(!_rpData){ rpGenerer(); }
+  if(!_rpData){
+    // Regénérer et attendre les données Supabase
+    const debutVal=document.getElementById('rp-debut').value;
+    const finVal=document.getElementById('rp-fin').value;
+    if(sbOnline){
+      Promise.all([
+        sbChargerVentes(debutVal||null,finVal||null),
+        sbChargerSuppressions(debutVal||null,finVal||null)
+      ]).then(([vF,sF])=>{
+        const el=document.getElementById('rapport-periode-content');
+        rpAfficher(el,vF||[],sF||[],debutVal,finVal);
+        if(_rpData) _doExportCSV();
+      });
+      return;
+    }
+    rpGenerer();
+  }
+  _doExportCSV();
+}
+function _doExportCSV(){
+  if(!_rpData) return;
   const { ventesValides, sF, periodeLabel } = _rpData;
 
   // Feuille ventes
