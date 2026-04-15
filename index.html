@@ -3181,11 +3181,14 @@ function rpAfficher(el, vF, sF, debutVal, finVal){
     parSrv[s].offert+=v.items.reduce((a,i)=>i.offert?(a+(i.priceOrig||i.price)*i.qty):a,0);
   });
 
-  // ── Top articles ──
-  const freq={}; ventesValides.forEach(v=>v.items.forEach(i=>{
-    if(!i.offert){ freq[i.name]=(freq[i.name]||{qty:0,ca:0}); freq[i.name].qty+=i.qty; freq[i.name].ca+=i.price*i.qty; }
+  // ── Tous les articles — vendus + offerts ──
+  const freq={};
+  ventesValides.forEach(v=>v.items.forEach(i=>{
+    if(!freq[i.name]) freq[i.name]={qty:0,ca:0,offertQty:0};
+    if(i.offert){ freq[i.name].offertQty+=i.qty; }
+    else { freq[i.name].qty+=i.qty; freq[i.name].ca+=i.price*i.qty; }
   }));
-  const top=Object.entries(freq).sort((a,b)=>b[1].qty-a[1].qty).slice(0,8);
+  const allArts=Object.entries(freq).sort((a,b)=>b[1].qty-a[1].qty);
 
   // ── Render ──
   const periodeLabel = debutVal || finVal
@@ -3216,11 +3219,34 @@ function rpAfficher(el, vF, sF, debutVal, finVal){
       </div>
     </div>`).join('')||'<div style="color:var(--muted);font-size:0.82rem">Aucune vente</div>';
 
-  const topRows = top.map(([n,d])=>`
-    <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--border)">
-      <span style="font-size:0.82rem;font-weight:600">${n}</span>
-      <span style="font-size:0.82rem">×${d.qty} — <b>${fmtDT(d.ca)}</b></span>
-    </div>`).join('')||'<div style="color:var(--muted);font-size:0.82rem">Aucun article</div>';
+  const totalQteVendues = allArts.reduce((s,[,d])=>s+d.qty,0);
+
+  const artRows = allArts.length ? `
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border)">
+          <td style="font-size:0.72rem;color:var(--muted);padding:4px 0;font-weight:700">Article</td>
+          <td style="font-size:0.72rem;color:var(--muted);padding:4px 0;font-weight:700;text-align:center">Qté vendue</td>
+          <td style="font-size:0.72rem;color:var(--muted);padding:4px 0;font-weight:700;text-align:center">Offerts</td>
+          <td style="font-size:0.72rem;color:var(--muted);padding:4px 0;font-weight:700;text-align:right">CA</td>
+        </tr>
+      </thead>
+      <tbody>
+        ${allArts.map(([n,d])=>`
+        <tr style="border-bottom:1px dashed var(--border)">
+          <td style="font-size:0.82rem;padding:5px 0;font-weight:600">${n}</td>
+          <td style="font-size:0.9rem;font-weight:900;text-align:center;color:var(--accent)">×${d.qty}</td>
+          <td style="font-size:0.8rem;text-align:center;color:var(--violet)">${d.offertQty?'🎁 ×'+d.offertQty:'—'}</td>
+          <td style="font-size:0.82rem;font-weight:700;text-align:right">${fmtDT(d.ca)}</td>
+        </tr>`).join('')}
+        <tr style="border-top:2px solid var(--border);background:var(--bg)">
+          <td style="font-size:0.82rem;font-weight:900;padding:6px 0">TOTAL</td>
+          <td style="font-size:0.9rem;font-weight:900;text-align:center;color:var(--accent)">×${totalQteVendues}</td>
+          <td></td>
+          <td style="font-size:0.82rem;font-weight:900;text-align:right;color:var(--green)">${fmtDT(caTotal)}</td>
+        </tr>
+      </tbody>
+    </table>` : '<div style="color:var(--muted);font-size:0.82rem">Aucun article</div>';
 
   const supprRows = sF.slice(0,10).map(s=>`
     <div style="padding:6px 10px;background:#fef2f2;border-left:3px solid var(--red);border-radius:6px;margin-bottom:5px">
@@ -3277,10 +3303,13 @@ function rpAfficher(el, vF, sF, debutVal, finVal){
     ${srvRows}
   </div>
 
-  <!-- Top articles -->
+  <!-- Tous les articles vendus -->
   <div style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
-    <div style="font-weight:800;font-size:0.82rem;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">🏆 Top Articles</div>
-    ${topRows}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-weight:800;font-size:0.82rem;text-transform:uppercase;letter-spacing:.04em">📦 Détail Articles — ${allArts.length} article(s)</div>
+      <div style="font-size:0.72rem;color:var(--muted)">${totalQteVendues} unités vendues</div>
+    </div>
+    ${artRows}
   </div>
 
   <!-- Suppressions -->
@@ -3350,9 +3379,15 @@ function rpImprimer(){
   ventesValides.forEach(v=>{ const s=v.salon||'—'; if(!parSalon[s]) parSalon[s]={ca:0,nb:0}; parSalon[s].ca+=v.total; parSalon[s].nb++; });
   const parSrv={};
   ventesValides.forEach(v=>{ const s=v.serveur||'—'; if(!parSrv[s]) parSrv[s]={ca:0,nb:0}; parSrv[s].ca+=v.total; parSrv[s].nb++; });
+  // Tous les articles avec offerts
   const freq={};
-  ventesValides.forEach(v=>v.items.forEach(i=>{ if(!i.offert){ freq[i.name]=(freq[i.name]||{qty:0}); freq[i.name].qty+=i.qty; } }));
-  const top=Object.entries(freq).sort((a,b)=>b[1].qty-a[1].qty).slice(0,8);
+  ventesValides.forEach(v=>v.items.forEach(i=>{
+    if(!freq[i.name]) freq[i.name]={qty:0,ca:0,offertQty:0};
+    if(i.offert){ freq[i.name].offertQty+=i.qty; }
+    else { freq[i.name].qty+=i.qty; freq[i.name].ca+=i.price*i.qty; }
+  }));
+  const allArts=Object.entries(freq).sort((a,b)=>b[1].qty-a[1].qty);
+  const totalQte=allArts.reduce((s,[,d])=>s+d.qty,0);
 
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
@@ -3369,6 +3404,7 @@ hr.d{border:0;border-top:1px dashed #555;margin:4px 0}
 .row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;border-bottom:1px dotted #ccc}
 .section{font-size:12px;font-weight:900;letter-spacing:1px;text-align:center;background:#000;color:#fff;padding:4px 0;margin:6px 0 3px}
 .warn{border:2px dashed #c00;padding:5px;margin:6px 0;text-align:center;font-weight:700;color:#c00;font-size:13px}
+table{width:100%;border-collapse:collapse}
 </style></head><body>
 <div class="titre">RAPPORT CA</div>
 <div class="sub">${config.nom||"O'Connors Irish Pub"}</div>
@@ -3388,8 +3424,29 @@ hr.d{border:0;border-top:1px dashed #555;margin:4px 0}
 ${Object.entries(parSalon).sort((a,b)=>b[1].ca-a[1].ca).map(([s,d])=>`<div class="row"><span>${s} (${d.nb})</span><span class="b">${fmtDT(d.ca)}</span></div>`).join('')}
 <div class="section">CA PAR SERVEUR</div>
 ${Object.entries(parSrv).sort((a,b)=>b[1].ca-a[1].ca).map(([s,d])=>`<div class="row"><span>${s} (${d.nb})</span><span class="b">${fmtDT(d.ca)}</span></div>`).join('')}
-<div class="section">TOP ARTICLES</div>
-${top.map(([n,d])=>`<div class="row"><span>${n}</span><span class="b">×${d.qty}</span></div>`).join('')}
+<div class="section">DÉTAIL ARTICLES (${allArts.length}) — ${totalQte} unités</div>
+<table>
+  <thead><tr>
+    <td style="font-size:10px;color:#555;border-bottom:1px solid #000;padding:2px 0">Article</td>
+    <td style="font-size:10px;color:#555;border-bottom:1px solid #000;text-align:center">Vendu</td>
+    <td style="font-size:10px;color:#555;border-bottom:1px solid #000;text-align:center">Offert</td>
+    <td style="font-size:10px;color:#555;border-bottom:1px solid #000;text-align:right">CA</td>
+  </tr></thead>
+  <tbody>
+  ${allArts.map(([n,d])=>`<tr style="border-bottom:1px dotted #ccc">
+    <td style="font-size:12px;padding:2px 0">${n}</td>
+    <td style="font-size:12px;font-weight:900;text-align:center">×${d.qty}</td>
+    <td style="font-size:11px;text-align:center;color:#7c3aed">${d.offertQty?'×'+d.offertQty:'—'}</td>
+    <td style="font-size:12px;font-weight:700;text-align:right">${fmtDT(d.ca)}</td>
+  </tr>`).join('')}
+  <tr style="border-top:2px solid #000">
+    <td style="font-size:12px;font-weight:900;padding:3px 0">TOTAL</td>
+    <td style="font-size:12px;font-weight:900;text-align:center">×${totalQte}</td>
+    <td></td>
+    <td style="font-size:12px;font-weight:900;text-align:right">${fmtDT(caTotal)}</td>
+  </tr>
+  </tbody>
+</table>
 ${sF.length?`<div class="warn">⚠️ ${sF.length} SUPPRESSION(S) — ${fmtDT(totalSuppr)}</div>`:''}
 <hr class="s">
 <div class="c" style="font-size:11px;margin-top:4px">Fin du rapport</div>
