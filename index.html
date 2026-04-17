@@ -3295,13 +3295,13 @@ function rpAfficher(el, vF, sF, debutVal, finVal){
       <tbody>
         ${allArts.map(([n,d])=>`
         <tr style="border-bottom:1px dashed var(--border)">
-          <td style="font-size:0.82rem;padding:5px 0;font-weight:600">${n}</td>
+          <td style="font-size:0.82rem;padding:5px 0;font-weight:600;color:var(--text)">${n}</td>
           <td style="font-size:0.9rem;font-weight:900;text-align:center;color:var(--accent)">×${d.qty}</td>
           <td style="font-size:0.8rem;text-align:center;color:var(--violet)">${d.offertQty?'🎁 ×'+d.offertQty:'—'}</td>
-          <td style="font-size:0.82rem;font-weight:700;text-align:right">${fmtDT(d.ca)}</td>
+          <td style="font-size:0.82rem;font-weight:700;text-align:right;color:var(--text)">${fmtDT(d.ca)}</td>
         </tr>`).join('')}
         <tr style="border-top:2px solid var(--border);background:var(--bg)">
-          <td style="font-size:0.82rem;font-weight:900;padding:6px 0">TOTAL</td>
+          <td style="font-size:0.82rem;font-weight:900;padding:6px 0;color:var(--text)">TOTAL</td>
           <td style="font-size:0.9rem;font-weight:900;text-align:center;color:var(--accent)">×${totalQteVendues}</td>
           <td></td>
           <td style="font-size:0.82rem;font-weight:900;text-align:right;color:var(--green)">${fmtDT(caTotal)}</td>
