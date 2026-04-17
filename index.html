@@ -419,7 +419,17 @@ button{touch-action:manipulation;font-family:'Cairo',sans-serif}
 .page{top:84px!important}
 #alert-banner{top:84px!important}
 
-/* Scrollbar */
+/* ── PANNEAU COMMANDE RÉTRACTABLE ── */
+#page-commande.panel-collapsed{grid-template-columns:1fr 48px}
+#page-commande.panel-collapsed .order-list,
+#page-commande.panel-collapsed .order-totals,
+#page-commande.panel-collapsed .numpad-wrap{display:none}
+#page-commande.panel-collapsed .order-top{flex-direction:column;align-items:center;
+  justify-content:center;gap:8px;padding:8px 4px;height:100%}
+#page-commande.panel-collapsed #order-title{font-size:0.7rem;writing-mode:vertical-rl;
+  text-orientation:mixed;white-space:nowrap}
+#page-commande.panel-collapsed #btn-toggle-panel{transform:rotate(180deg)}
+#page-commande.panel-collapsed .order-panel{border-left:2px solid var(--border)}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
 *{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
@@ -510,7 +520,7 @@ button{touch-action:manipulation;font-family:'Cairo',sans-serif}
   <!-- CATALOGUE (gauche) -->
   <div class="catalogue">
     <div class="cat-header">
-      <button class="btn-back" onclick="goPage('tables',document.querySelector('.nav-btn'))">← Tables</button>
+      <button class="btn-back" onclick="retourTables()">← Tables</button>
       <div class="table-badge" id="cur-table-lbl">Table ?</div>
       <input type="text" class="search-bar" id="search-prod" placeholder="🔍 Rechercher…" oninput="filterProd()">
     </div>
@@ -557,7 +567,7 @@ button{touch-action:manipulation;font-family:'Cairo',sans-serif}
   </div>
 
   <!-- PANNEAU COMMANDE (droite) — plus de barre d'actions ici -->
-  <div class="order-panel">
+  <div class="order-panel" id="order-panel">
     <div class="order-top">
       <div class="order-title" id="order-title">🧾 Commande</div>
       <div class="order-total-badge" id="order-total-badge">0,000 DT</div>
@@ -1267,6 +1277,7 @@ let suppressions = ld(K.SUPPRESSIONS, []);
 let currentRole=null, currentUser='';
 let loginRole='user', pinVal='';
 let currentTableId=null;
+let cmdLancee=false; // true après LANCER — retour libre sans confirmation
 let curRub='', curFam='', curSF='', searchTerm='';
 let selLineId=null, npdVal='';
 let remiseOn=false;
@@ -1629,6 +1640,7 @@ function delTable(id){
 }
 function openTable(id){
   currentTableId=id;
+  cmdLancee=false; // réinitialiser état lancement à chaque ouverture de table
   const t=tables.find(x=>x.id===id);
   if(!t.openedAt&&(!t.order||!t.order.length)){ t.openedAt=new Date().toISOString(); sv(K.TABLES,tables); }
   document.getElementById('cur-table-lbl').textContent='🪑 '+t.name+(t.salon?' ('+t.salon+')':'');
@@ -2013,10 +2025,26 @@ ${remMont>0?`<table><tr><td style="font-size:13px">Sous-total</td><td style="tex
   showSuccess('🖨️ Note de consommation imprimée');
 }
 
+// Retour vers tables — confirmation si commande non lancée
+function retourTables(){
+  const t=curTable();
+  const hasOrder=t&&t.order&&t.order.length>0;
+  if(hasOrder && !cmdLancee){
+    if(!confirm('⚠️ La commande de '+t.name+' n\'a pas été lancée.\nQuitter sans enregistrer ?')) return;
+    // Vider la commande si on quitte sans lancer
+    t.order=[]; t.openedAt=null; sv(K.TABLES,tables);
+  }
+  cmdLancee=false;
+  selLineId=null; npdVal=''; remiseOn=false;
+  goPage('tables',document.querySelector('.nav-btn'));
+  renderTables();
+}
+
 function lancerCmd(){
   const t=curTable(); if(!t||!t.order.length) return;
   const lignes=t.order.map(i=>i.qty+'× '+i.name+(i.note?' ['+i.note+']':'')+' …… '+fmtDT(i.price*i.qty)).join('\n');
   alert('📋 BON DE COMMANDE\n'+t.name+'\n'+new Date().toLocaleTimeString('fr-FR')+'\n─────────────\n'+lignes+'\n─────────────\nTOTAL : '+fmtDT(t.order.reduce((s,i)=>s+i.price*i.qty,0)));
+  cmdLancee=true; // commande confirmée — retour libre
   showSuccess('Commande lancée ✓');
   setTimeout(()=>{ remiseOn=false; goPage('tables',document.querySelector('.nav-btn')); renderTables(); },600);
 }
@@ -2502,13 +2530,29 @@ function printRapportX(){
   const totalRemise=vj.reduce((s,v)=>s+(v.remise||0),0);
   const totalOffert=vj.reduce((s,v)=>s+v.items.reduce((a,i)=>i.offert?(a+(i.priceOrig||i.price)*i.qty):a,0),0);
 
-  const freq={};
+  // ── Articles encaissés ──
+  const freqEnc={};
   vj.forEach(v=>v.items.forEach(i=>{
-    if(!freq[i.name]) freq[i.name]={qty:0,ca:0};
-    if(!i.offert){freq[i.name].qty+=i.qty;freq[i.name].ca+=i.price*i.qty;}
+    if(!freqEnc[i.name]) freqEnc[i.name]={enc:0,cours:0,ca:0};
+    if(!i.offert){freqEnc[i.name].enc+=i.qty; freqEnc[i.name].ca+=i.price*i.qty;}
   }));
-  const artRows=Object.entries(freq).sort((a,b)=>b[1].qty-a[1].qty).map(([n,d])=>
-    `<tr><td style="font-size:14px;padding:3px 0">${n}</td><td style="text-align:center;font-size:14px;font-weight:900">×${d.qty}</td><td style="text-align:right;font-size:14px;font-weight:700">${fmtDT(d.ca)}</td></tr>`
+  // ── Articles en cours (tables ouvertes) ──
+  enCours.forEach(t=>t.order.forEach(i=>{
+    if(!freqEnc[i.name]) freqEnc[i.name]={enc:0,cours:0,ca:0};
+    if(!i.offert) freqEnc[i.name].cours+=i.qty;
+  }));
+  const allArtsX=Object.entries(freqEnc).sort((a,b)=>(b[1].enc+b[1].cours)-(a[1].enc+a[1].cours));
+  const totalEncQte=allArtsX.reduce((s,[,d])=>s+d.enc,0);
+  const totalCoursQte=allArtsX.reduce((s,[,d])=>s+d.cours,0);
+
+  const artRows=allArtsX.map(([n,d])=>
+    `<tr>
+      <td style="font-size:13px;padding:3px 0">${n}</td>
+      <td style="text-align:center;font-size:13px;font-weight:900">×${d.enc}</td>
+      <td style="text-align:center;font-size:13px;font-weight:900;color:#d97706">${d.cours?'×'+d.cours:'—'}</td>
+      <td style="text-align:center;font-size:13px;font-weight:900;color:#059669">×${d.enc+d.cours}</td>
+      <td style="text-align:right;font-size:12px;font-weight:700">${fmtDT(d.ca)}</td>
+    </tr>`
   ).join('');
 
   const caSalon={};
@@ -2540,6 +2584,7 @@ hr.d{border:0;border-top:1px dashed #555;margin:4px 0}
 .sec{font-size:12px;font-weight:900;letter-spacing:1px;text-align:center;background:#000;color:#fff;padding:3px 0;margin:5px 0 3px}
 table{width:100%;border-collapse:collapse}
 .xbadge{border:2px solid #000;padding:2px 8px;font-size:12px;font-weight:900;display:inline-block;margin-bottom:3px}
+th{font-size:10px;color:#555;border-bottom:1px solid #000;padding:2px 0;font-weight:700}
 </style></head><body>
 <div class="c"><div class="xbadge">★ RAPPORT X — EN COURS DE SERVICE ★</div></div>
 <div class="c b" style="font-size:16px">${config.nom||"O'Connors Irish Pub"}</div>
@@ -2549,19 +2594,35 @@ table{width:100%;border-collapse:collapse}
 <div class="bloc">
   <div style="font-size:13px;font-weight:700">CA ENCAISSÉ</div>
   <div class="ca">${fmtDT(ca)}</div>
-  <div style="font-size:11px">${vj.length} ticket(s) · ${art} article(s)</div>
+  <div style="font-size:11px">${vj.length} ticket(s) · ${art} article(s) encaissés</div>
 </div>
-<div class="row"><span>En cours (tables ouvertes)</span><span style="color:#d97706">${fmtDT(enCoursTotal)}</span></div>
-${totalRemise>0?`<div class="row"><span>🏷️ Remises accordées</span><span>${fmtDT(totalRemise)}</span></div>`:''}
-${totalOffert>0?`<div class="row"><span>🎁 Offerts (valeur)</span><span>${fmtDT(totalOffert)}</span></div>`:''}
+<div class="row"><span>🟡 En cours (tables ouvertes)</span><span style="color:#d97706">${fmtDT(enCoursTotal)}</span></div>
+<div class="row" style="font-weight:900"><span>TOTAL CONSOMMÉ</span><span>${fmtDT(ca+enCoursTotal)}</span></div>
+${totalRemise>0?`<div class="row"><span>🏷️ Remises</span><span>${fmtDT(totalRemise)}</span></div>`:''}
+${totalOffert>0?`<div class="row"><span>🎁 Offerts</span><span>${fmtDT(totalOffert)}</span></div>`:''}
 ${supprEnCours.length?`<div class="row"><span>🗑️ Suppressions (${supprEnCours.length})</span><span style="color:#dc2626">${fmtDT(totalSuppr)}</span></div>`:''}
 <div class="sec">CA PAR SALON</div>
 <table><tbody>${salonRows}</tbody></table>
 ${enCours.length?`<div class="sec">TABLES EN COURS</div><table><tbody>${tablesRows}</tbody></table>`:''}
-<div class="sec">ARTICLES VENDUS</div>
+<div class="sec">TOUS LES ARTICLES (encaissés + en cours)</div>
 <table>
-  <thead><tr><td style="font-size:11px;color:#555;border-bottom:1px solid #000">Article</td><td style="text-align:center;font-size:11px;color:#555;border-bottom:1px solid #000">Qté</td><td style="text-align:right;font-size:11px;color:#555;border-bottom:1px solid #000">CA</td></tr></thead>
-  <tbody>${artRows}</tbody>
+  <thead><tr>
+    <th style="text-align:left">Article</th>
+    <th style="text-align:center">Enc.</th>
+    <th style="text-align:center;color:#d97706">Cours</th>
+    <th style="text-align:center;color:#059669">Total</th>
+    <th style="text-align:right">CA enc.</th>
+  </tr></thead>
+  <tbody>
+    ${artRows}
+    <tr style="border-top:2px solid #000">
+      <td style="font-size:12px;font-weight:900;padding:3px 0">TOTAL</td>
+      <td style="text-align:center;font-size:12px;font-weight:900">×${totalEncQte}</td>
+      <td style="text-align:center;font-size:12px;font-weight:900;color:#d97706">×${totalCoursQte}</td>
+      <td style="text-align:center;font-size:12px;font-weight:900;color:#059669">×${totalEncQte+totalCoursQte}</td>
+      <td style="text-align:right;font-size:12px;font-weight:900">${fmtDT(ca)}</td>
+    </tr>
+  </tbody>
 </table>
 <hr class="s">
 <div class="c" style="font-size:11px;margin-top:4px">⚠️ Document interne — non fiscal</div>
@@ -3457,6 +3518,12 @@ ${sF.length?`<div class="warn">⚠️ ${sF.length} SUPPRESSION(S) — ${fmtDT(to
   w.document.open(); w.document.write(html); w.document.close(); w.focus();
   w.onload=function(){ w.print(); setTimeout(()=>{ try{w.close()}catch(e){} },1200); };
   if(w.document.readyState==='complete'){ w.print(); setTimeout(()=>{ try{w.close()}catch(e){} },1200); }
+}
+
+// ── Toggle panneau commande ──
+function toggleOrderPanel(){
+  const page=document.getElementById('page-commande');
+  page.classList.toggle('panel-collapsed');
 }
 
 // ══════════════════════════════════════════════════════════
