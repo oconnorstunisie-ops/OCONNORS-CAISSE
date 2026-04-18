@@ -6,7 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1e40af">
-<title>O'Connors Irish Pub — Caisse</title>
+<title>O'Connors Irish Pub — BOX EVO v5.1</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -482,7 +482,7 @@ button{touch-action:manipulation;font-family:'Cairo',sans-serif}
 
 <!-- TOPBAR -->
 <div class="topbar">
-  <div class="logo">🍺 O'Connors</div>
+  <div class="logo">🍺 O'Connors <span style="font-size:0.65rem;opacity:.6;font-weight:600">v5.1</span></div>
   <div class="nav-center">
     <button class="nav-btn active" onclick="goPage('tables',this)">🪑 Tables</button>
     <button class="nav-btn" onclick="goPage('historique',this)">📋 Historique</button>
@@ -1790,7 +1790,10 @@ function deselLine(){
   selLineId=null; npdVal='';
   document.querySelectorAll('.order-item').forEach(el=>el.classList.remove('selected'));
   const ao=document.getElementById('act-offert'); if(ao) ao.disabled=true;
-  const an=document.getElementById('act-note'); if(an) an.disabled=true;
+  // NOTE reste toujours actif s'il y a des articles
+  const t=curTable();
+  const an=document.getElementById('act-note');
+  if(an) an.disabled=!(t&&t.order&&t.order.length>0);
   npdRefresh();
 }
 
