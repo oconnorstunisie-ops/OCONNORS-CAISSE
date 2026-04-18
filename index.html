@@ -1430,6 +1430,13 @@ setInterval(()=>{
     String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
 },1000);
 
+// Fix N4 — Rafraîchissement chrono tables toutes les minutes
+setInterval(()=>{
+  if(document.getElementById('page-tables').classList.contains('active')){
+    renderTables();
+  }
+}, 60000);
+
 // Vérification périodique toutes les heures — archive les ventes > 60 jours
 setInterval(()=>{ checkMensuelLS(); },3600000);
 
@@ -1476,7 +1483,19 @@ function doLogin(){
       renderTables();
       checkAlertes();
       checkMensuelLS();
-      afficherAlerteSuppression(); // badge suppressions
+      afficherAlerteSuppression();
+      // Fix N3 — Rappel backup hebdomadaire le lundi pour admin
+      if(currentRole==='admin'){
+        const today=new Date();
+        const lastBackup=localStorage.getItem('oc-last-backup-remind');
+        const todayStr=today.toISOString().slice(0,10);
+        if(today.getDay()===1 && lastBackup!==todayStr){ // 1 = lundi
+          localStorage.setItem('oc-last-backup-remind',todayStr);
+          setTimeout(()=>{
+            showSuccess('💾 Lundi — Pensez à faire un Export JSON de sauvegarde !');
+          },2000);
+        }
+      } // badge suppressions
     },300);
   } else {
     for(let i=0;i<pinVal.length;i++) document.getElementById('pd'+i).classList.add('err');
@@ -1600,6 +1619,7 @@ function renderTables(){
 function tableCardHTML(t,now){
   const has=t.order&&t.order.length>0;
   const tot=tableTotal(t);
+  const salonNom=t.salon||'Salle'; // Fix N2 : salon vide → Salle par défaut
   let dur='';
   if(has&&t.openedAt){
     const m=Math.floor((now-new Date(t.openedAt).getTime())/60000);
@@ -1609,10 +1629,13 @@ function tableCardHTML(t,now){
     <button class="table-del" onclick="event.stopPropagation();delTable(${t.id})">✕</button>
     <div class="table-icon">${has?'🟡':'🟢'}</div>
     <div class="table-name">${t.name}</div>
-    ${t.salon?`<div class="table-salon">🏠 ${t.salon}</div>`:''}
+    <div class="table-salon">🏠 ${salonNom}</div>
     <div class="table-status ${has?'occ':''}">${has?'● '+t.order.length+' article(s)':'● Libre'}</div>
     ${has?`<div class="table-total">${fmtDT(tot)}</div>`:''}
-    ${dur?`<div class="table-dur">${dur}</div>`:''}
+    ${dur?`<div class="table-dur" style="font-size:0.78rem;font-weight:800;color:${
+      Math.floor((now-new Date(t.openedAt).getTime())/60000)>=120?'#dc2626':
+      Math.floor((now-new Date(t.openedAt).getTime())/60000)>=60?'#d97706':'#64748b'
+    }">${dur}</div>`:''}
   </div>`;
 }
 
@@ -1787,9 +1810,11 @@ function renderOrder(){
   const ol=document.getElementById('order-list');
   if(!has){
     ol.innerHTML=`<div class="order-empty-msg"><div style="font-size:2.5rem;opacity:.2">🍽️</div><div>Aucun article</div></div>`;
-    ['act-lancer','act-encaisser','act-remise','act-offert','act-note','act-transfert','act-vider'].forEach(id=>{
+    ['act-lancer','act-encaisser','act-remise','act-offert','act-transfert','act-vider'].forEach(id=>{
       const b=document.getElementById(id); if(b){ b.disabled=true; b.classList.remove('on'); }
     });
+    // NOTE toujours actif même commande vide
+    const bn=document.getElementById('act-note'); if(bn) bn.disabled=false;
     selLineId=null; npdVal=''; npdRefresh();
     return;
   }
@@ -1840,7 +1865,7 @@ function clearCmd(){
     const totalQty=t.order.reduce((s,i)=>s+i.qty,0);
     const log={
       date:new Date().toISOString(), serveur:currentUser,
-      table:t.name, salon:t.salon||'',
+      table:t.name, salon:t.salon||'Salle',
       items:JSON.parse(JSON.stringify(t.order)),
       montant, totalQty, type:'table'
     };
@@ -1889,7 +1914,7 @@ function openTransfert(){
       style="padding:10px 14px;border:2px solid var(--border);border-radius:10px;cursor:pointer;
              min-width:100px;text-align:center;transition:.13s;background:${occ?'#fffbeb':'#fff'}">
       <div style="font-weight:900;font-size:0.95rem">${t.name}</div>
-      <div style="font-size:0.72rem;color:var(--muted)">${t.salon||''}</div>
+      <div style="font-size:0.72rem;color:var(--muted)">${t.salon||'Salle'}</div>
       ${occ ? `<div style="font-size:0.72rem;color:#d97706;font-weight:700;margin-top:2px">🟡 ${fmtDT(tot)}</div>`
              : `<div style="font-size:0.72rem;color:var(--green);font-weight:700;margin-top:2px">🟢 Libre</div>`}
     </div>`;
@@ -1951,7 +1976,7 @@ function suppSelected(){
       date:new Date().toISOString(),
       serveur:currentUser,
       table:t.name,
-      salon:t.salon||'',
+      salon:t.salon||'Salle',
       items:[{name:item.name,qty:item.qty,price:item.price}],
       montant:(item.offert?0:item.price)*item.qty,
       totalQty:item.qty,
@@ -1966,9 +1991,13 @@ function suppSelected(){
   selLineId=null; npdVal=''; renderOrder();
 }
 
-// ── NOTE DE CONSOMMATION (ticket provisoire sans encaissement) ──
+// ── NOTE DE CONSOMMATION — toujours disponible, imprime l'état actuel ──
 function openNoteModal(){
-  const t=curTable(); if(!t||!t.order.length){ showSuccess('❌ Aucun article sur cette table'); return; }
+  const t=curTable();
+  if(!t){ showSuccess('❌ Aucune table sélectionnée'); return; }
+  if(!t.order||!t.order.length){
+    showSuccess('❌ Aucun article sur cette table'); return;
+  }
   printNoteConsommation(t);
 }
 function printNoteConsommation(t){
@@ -2109,7 +2138,7 @@ function finaliser(print){
   if(recuSaisi>0&&recuSaisi<tot){ alert('Montant insuffisant'); return; }
   const vente={
     id:counter++, date:new Date().toISOString(),
-    table:t.name, salon:t.salon||'',
+    table:t.name, salon:t.salon||'Salle',
     items:JSON.parse(JSON.stringify(t.order)),
     total:tot, recu, monnaie:recu-tot,
     remise:remMont, serveur:currentUser
@@ -2382,7 +2411,7 @@ function openRapportServeurs(){
       ${enCours.map(t=>{
         const tot = t.order.reduce((s,i)=>s+(i.offert?0:i.price)*i.qty,0);
         return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dotted #fde68a;font-size:0.83rem">
-          <span style="font-weight:700">${t.name} <span style="font-weight:400;color:var(--muted)">(${t.salon||''})</span></span>
+          <span style="font-weight:700">${t.name} <span style="font-weight:400;color:var(--muted)">(${t.salon||'Salle'})</span></span>
           <span style="font-weight:900;color:var(--yellow)">${fmtDT(tot)}</span>
         </div>`;
       }).join('')}
@@ -2556,14 +2585,14 @@ function printRapportX(){
   ).join('');
 
   const caSalon={};
-  vj.forEach(v=>{caSalon[v.salon||'—']=(caSalon[v.salon||'—']||0)+v.total;});
+  vj.forEach(v=>{caSalon[v.salon||'Salle']=(caSalon[v.salon||'Salle']||0)+v.total;});
   const salonRows=Object.entries(caSalon).map(([s,c])=>
     `<tr><td style="font-size:14px;padding:3px 0">${s}</td><td style="text-align:right;font-size:14px;font-weight:900">${fmtDT(c)}</td></tr>`
   ).join('');
 
   const tablesRows=enCours.map(t=>{
     const tot=t.order.reduce((s,i)=>s+(i.offert?0:i.price)*i.qty,0);
-    return`<tr><td style="font-size:13px;padding:3px 0">${t.name} (${t.salon||''})</td><td style="text-align:right;font-size:13px;font-weight:900;color:#d97706">${fmtDT(tot)}</td></tr>`;
+    return`<tr><td style="font-size:13px;padding:3px 0">${t.name} (${t.salon||'Salle'})</td><td style="text-align:right;font-size:13px;font-weight:900;color:#d97706">${fmtDT(tot)}</td></tr>`;
   }).join('');
 
   const supprEnCours=suppressions.filter(s=>lastCloture?new Date(s.date).getTime()>=new Date(lastCloture).getTime():true);
@@ -2652,7 +2681,7 @@ function printStats(){
   }));
   const allArts=Object.entries(freq).sort((a,b)=>b[1].qty-a[1].qty);
 
-  const caSalon={}; vj.forEach(v=>{ caSalon[v.salon||'—']=(caSalon[v.salon||'—']||0)+v.total; });
+  const caSalon={}; vj.forEach(v=>{ caSalon[v.salon||'Salle']=(caSalon[v.salon||'Salle']||0)+v.total; });
   const salonRows=Object.entries(caSalon).map(([s,c])=>`
     <tr><td style="font-size:15px;padding:4px 0">${s}</td><td style="text-align:right;font-size:15px;font-weight:900;padding:4px 0">${fmtDT(c)}</td></tr>`).join('');
 
@@ -3227,7 +3256,7 @@ function rpAfficher(el, vF, sF, debutVal, finVal){
   // ── CA par salon ──
   const parSalon = {};
   ventesValides.forEach(v=>{
-    const s=v.salon||'—';
+    const s=v.salon||'Salle';
     if(!parSalon[s]) parSalon[s]={ca:0,nb:0};
     parSalon[s].ca+=v.total; parSalon[s].nb++;
   });
@@ -3437,7 +3466,7 @@ function rpImprimer(){
   const moy = nbTickets ? caTotal/nbTickets : 0;
 
   const parSalon={};
-  ventesValides.forEach(v=>{ const s=v.salon||'—'; if(!parSalon[s]) parSalon[s]={ca:0,nb:0}; parSalon[s].ca+=v.total; parSalon[s].nb++; });
+  ventesValides.forEach(v=>{ const s=v.salon||'Salle'; if(!parSalon[s]) parSalon[s]={ca:0,nb:0}; parSalon[s].ca+=v.total; parSalon[s].nb++; });
   const parSrv={};
   ventesValides.forEach(v=>{ const s=v.serveur||'—'; if(!parSrv[s]) parSrv[s]={ca:0,nb:0}; parSrv[s].ca+=v.total; parSrv[s].nb++; });
   // Tous les articles avec offerts
